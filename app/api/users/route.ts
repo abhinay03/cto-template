@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '../../../../lib/database';
-import { User, LearningPurpose, ReadingHabit, ContentType } from '../../../../types';
+import { db } from '../../../lib/database';
+import { User, LearningPurpose, ReadingHabit, ContentType } from '../../../types';
 
 // GET /api/users - Get all users (for admin purposes)
 export async function GET() {
   try {
-    const users: User[] = [];
-    // In a real implementation, you'd get users from database
+    const users = await db.getAllUsers();
     return NextResponse.json({ users }, { status: 200 });
   } catch (error) {
+    console.error('Error fetching users:', error);
     return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 });
   }
 }

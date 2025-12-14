@@ -20,6 +20,12 @@ interface User {
 
 interface Session {
   id: string;
+  words: Array<{
+    userWordId: string;
+    wordId: string;
+    activityType: string;
+    priority: string;
+  }>;
   totalWords: number;
   correctAnswers: number;
   startedAt: string;

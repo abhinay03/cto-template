@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { db } from '../../../../lib/database';
 
 // POST /api/dev/seed - Seed the database with sample data

@@ -1,5 +1,5 @@
 // Spaced Repetition System (SRS) based on SM-2 algorithm
-import { UserWord, SessionAttempt, WordState } from '../types';
+import { ErrorRecord, ErrorType, UserWord, SessionAttempt, WordState } from '../types';
 import { db } from './database';
 
 interface SRSData {
@@ -23,46 +23,50 @@ class SpacedRepetitionEngine {
    * Calculate next review schedule based on user performance
    */
   async scheduleNextReview(
-    userWordId: string, 
-    attempts: SessionAttempt[], 
-    wordState: WordState
+    userWordId: string,
+    attempts: SessionAttempt[]
   ): Promise<UserWord> {
     const userWord = await db.getUserWordById(userWordId);
     if (!userWord) throw new Error('User word not found');
 
-    const srsData = this.extractSRSData(userWord);
     const latestAttempt = attempts[attempts.length - 1];
-    
-    // Update SRS data based on latest performance
-    const updatedSRSData = this.updateSRSData(
-      srsData, 
-      latestAttempt
-    );
+    if (!latestAttempt) throw new Error('No attempts provided');
 
-    // Calculate new next review date
-    const nextReviewDate = this.calculateNextReviewDate(updatedSRSData, latestAttempt.isCorrect);
+    const srsData = this.extractSRSData(userWord);
 
-    // Determine new word state based on performance
-    const newState = this.determineWordState(updatedSRSData, wordState);
+    const updatedSRSData = this.updateSRSData(srsData, latestAttempt);
 
-    // Update familiarity score based on performance
+    const nextReviewDate = this.calculateNextReviewDate(updatedSRSData);
+
+    const newState = this.determineWordState(updatedSRSData, userWord.wordState);
+
     const newFamiliarityScore = this.calculateFamiliarityScore(
-      userWord.familiarityScore, 
-      latestAttempt.isCorrect, 
+      userWord.familiarityScore,
+      latestAttempt.isCorrect,
       latestAttempt.confidence
     );
 
-    // Update confidence rating
-    const newConfidenceRating = Math.min(5, Math.max(1, 
+    const newConfidenceRating = Math.min(5, Math.max(1,
       userWord.confidenceRating + (latestAttempt.isCorrect ? 1 : -1)
     ));
 
+    const nextErrorHistory = latestAttempt.isCorrect
+      ? userWord.errorHistory
+      : [...userWord.errorHistory, await this.createErrorRecord(userWord, latestAttempt)];
+
     return await db.updateUserWord(userWordId, {
+      lastSeen: new Date(),
       nextRevisionDate: nextReviewDate,
       revisionCount: userWord.revisionCount + 1,
       confidenceRating: newConfidenceRating,
       familiarityScore: newFamiliarityScore,
-      wordState: newState
+      wordState: newState,
+      errorHistory: nextErrorHistory,
+      srsEaseFactor: updatedSRSData.easeFactor,
+      srsInterval: updatedSRSData.interval,
+      srsRepetition: updatedSRSData.repetition,
+      srsConsecutiveCorrect: updatedSRSData.consecutiveCorrect,
+      srsConsecutiveIncorrect: updatedSRSData.consecutiveIncorrect
     }) as UserWord;
   }
 
@@ -110,7 +114,12 @@ class SpacedRepetitionEngine {
       revisionCount: 0,
       confidenceRating: 1,
       errorHistory: [],
-      wordState: 'new'
+      wordState: 'new',
+      srsEaseFactor: srsData.easeFactor,
+      srsInterval: srsData.interval,
+      srsRepetition: srsData.repetition,
+      srsConsecutiveCorrect: srsData.consecutiveCorrect,
+      srsConsecutiveIncorrect: srsData.consecutiveIncorrect
     };
 
     return await db.createUserWord(userWordData);
@@ -140,45 +149,61 @@ class SpacedRepetitionEngine {
    */
   async getWordSuggestions(userId: string, count: number = 5): Promise<string[]> {
     const userWords = await db.getUserWords(userId);
-    const analytics = await db.getUserAnalytics(userId);
 
-    if (!analytics) return [];
+    const learnedWordTexts = new Set<string>();
+    for (const userWord of userWords) {
+      const word = await db.getWord(userWord.wordId);
+      if (word) learnedWordTexts.add(word.word.toLowerCase());
+    }
 
-    // Get words in "known" state that could be expanded
-    const knownWords = userWords.filter(uw => uw.wordState === 'known');
+    const expansionCandidates = userWords.filter(uw => uw.wordState === 'known' || uw.wordState === 'mastered');
     const suggestions: string[] = [];
 
-    // Suggest synonyms and related words for mastered words
-    for (const userWord of knownWords.slice(0, 10)) {
+    for (const userWord of expansionCandidates.slice(0, 10)) {
       const word = await db.getWord(userWord.wordId);
-      if (word) {
-        // Add synonyms that user hasn't learned
-        const learnedWordIds = userWords.map(uw => uw.wordId);
-        const newSynonyms = word.semanticMetadata.synonyms.filter(
-          synonym => !learnedWordIds.includes(synonym)
-        ).slice(0, 2);
+      if (!word) continue;
 
-        suggestions.push(...newSynonyms);
+      const newSynonyms = word.semanticMetadata.synonyms
+        .filter(syn => !learnedWordTexts.has(syn.toLowerCase()))
+        .slice(0, 2);
 
-        if (suggestions.length >= count) break;
-      }
+      suggestions.push(...newSynonyms);
+
+      if (suggestions.length >= count) break;
     }
 
     return suggestions.slice(0, count);
   }
 
-  private extractSRSData(userWord: UserWord): SRSData {
-    // In a real implementation, this would extract SRS data from userWord
-    // For now, we'll derive it from the available fields
+  private async createErrorRecord(userWord: UserWord, attempt: SessionAttempt): Promise<ErrorRecord> {
+    const word = await db.getWord(userWord.wordId);
+
+    const correctAnswer = word?.meanings[0]?.definition || word?.word || '';
+
     return {
-      easeFactor: this.DEFAULT_EASE_FACTOR,
-      interval: Math.max(1, Math.ceil((userWord.nextRevisionDate.getTime() - userWord.lastSeen.getTime()) / (1000 * 60 * 60 * 24))),
-      repetition: userWord.revisionCount,
+      date: new Date(),
+      errorType: 'meaning_confusion',
+      context: 'daily_session',
+      attemptedAnswer: attempt.userAnswer,
+      correctAnswer
+    };
+  }
+
+  private extractSRSData(userWord: UserWord): SRSData {
+    const derivedInterval = Math.max(
+      1,
+      Math.ceil((userWord.nextRevisionDate.getTime() - userWord.lastSeen.getTime()) / (1000 * 60 * 60 * 24))
+    );
+
+    return {
+      easeFactor: userWord.srsEaseFactor ?? this.DEFAULT_EASE_FACTOR,
+      interval: userWord.srsInterval ?? derivedInterval,
+      repetition: userWord.srsRepetition ?? userWord.revisionCount,
       nextReviewDate: userWord.nextRevisionDate,
       lastReviewDate: userWord.lastSeen,
       successRate: userWord.familiarityScore,
-      consecutiveCorrect: Math.min(5, userWord.confidenceRating),
-      consecutiveIncorrect: 0 // Would need to track this separately
+      consecutiveCorrect: userWord.srsConsecutiveCorrect ?? Math.min(5, userWord.confidenceRating),
+      consecutiveIncorrect: userWord.srsConsecutiveIncorrect ?? 0
     };
   }
 
@@ -219,7 +244,7 @@ class SpacedRepetitionEngine {
     return updated;
   }
 
-  private calculateNextReviewDate(srsData: SRSData, wasCorrect: boolean): Date {
+  private calculateNextReviewDate(srsData: SRSData): Date {
     const nextReview = new Date();
     nextReview.setDate(nextReview.getDate() + srsData.interval);
     return nextReview;

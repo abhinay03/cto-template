@@ -37,7 +37,7 @@ interface Word {
   }>;
 }
 
-export function LearningSession({ _, session, onComplete, onExit }: LearningSessionProps) {
+export function LearningSession({ userId, session, onComplete, onExit }: LearningSessionProps) {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [currentWord, setCurrentWord] = useState<Word | null>(null);
   const [userAnswer, setUserAnswer] = useState('');
@@ -58,44 +58,30 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
   const [sessionProgress, setSessionProgress] = useState(0);
 
   const currentSessionWord = session?.words[currentWordIndex];
-
-  const loadCurrentWord = () => {
-    try {
-      // In a real implementation, you'd fetch the word details
-      // For now, we'll simulate word data
-      const mockWord: Word = {
-        id: currentSessionWord?.wordId || '1',
-        word: "benevolent",
-        phonetics: "/bəˈnevələnt/",
-        partOfSpeech: "adjective",
-        meanings: [
-          {
-            definition: "Well-meaning and kindly",
-            translation: "Benévolo"
-          }
-        ],
-        examples: [
-          {
-            sentence: "The benevolent teacher always helped students who were struggling.",
-            level: "standard"
-          }
-        ]
-      };
-      setCurrentWord(mockWord);
-    } catch (error) {
-      console.error('Error loading word:', error);
-    }
-  };
+  const currentWordId = currentSessionWord?.wordId;
 
   useEffect(() => {
-    if (currentSessionWord) {
-      // Use setTimeout to avoid synchronous setState in effect
-      const timeoutId = setTimeout(() => {
-        loadCurrentWord();
-      }, 0);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [currentWordIndex, currentSessionWord, loadCurrentWord]);
+    const loadWord = async () => {
+      if (!currentWordId) return;
+
+      try {
+        const response = await fetch(`/api/words/${currentWordId}`);
+        const data = await response.json();
+
+        if (response.ok) {
+          setCurrentWord(data.word);
+        } else {
+          setCurrentWord(null);
+          console.error('Failed to load word:', data.error);
+        }
+      } catch (error) {
+        setCurrentWord(null);
+        console.error('Error loading word:', error);
+      }
+    };
+
+    loadWord();
+  }, [currentWordId]);
 
   const submitAnswer = async (answer: string) => {
     if (!currentSessionWord || !currentWord) return;
@@ -106,7 +92,9 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
     const confidence = Math.max(50, Math.min(90, 60 + Math.floor(answerLength / 10) * 10)); // Simulated confidence
     
     // Simulate correct/incorrect based on answer length (70% correct rate for longer answers)
-    const correct = answerLength > 3 && (answer.length % 10 < 7) || answerLength <= 3 && (answer.length % 10 >= 7);
+    const correct =
+      (answerLength > 3 && answerLength % 10 < 7) ||
+      (answerLength <= 3 && answerLength % 10 >= 7);
     setIsCorrect(correct);
 
     try {
@@ -116,6 +104,7 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          userId,
           userWordId: currentSessionWord.userWordId,
           userAnswer: answer,
           isCorrect: correct,
@@ -182,7 +171,7 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
                 placeholder="Type the meaning of this word..."
                 value={userAnswer}
                 onChange={(e) => setUserAnswer(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && submitAnswer(userAnswer)}
+                onKeyDown={(e) => e.key === 'Enter' && submitAnswer(userAnswer)}
               />
             </div>
 

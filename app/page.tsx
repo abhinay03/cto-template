@@ -7,6 +7,11 @@ import { LearningSession } from '../components/LearningSession';
 
 interface User {
   id: string;
+  primaryLanguage: string;
+  educationLevel: string;
+  purpose: string;
+  readingHabit: string;
+  preferredContentType: string;
   vocabularyLevelScore: number;
   weakAreas: string[];
   confidenceScore: number;
@@ -15,6 +20,16 @@ interface User {
 
 interface Session {
   id: string;
+  words: Array<{
+    userWordId: string;
+    wordId: string;
+    activityType: string;
+    priority: string;
+  }>;
+  totalWords: number;
+  correctAnswers: number;
+  startedAt: string;
+  isCompleted: boolean;
 }
 
 export default function Home() {
@@ -102,7 +117,7 @@ export default function Home() {
     return (
       <div className="min-h-screen bg-zinc-50 py-8">
         <OnboardingTest 
-          userId={currentUser?.id} 
+          userId={currentUser!.id} 
           onComplete={handleOnboardingComplete}
         />
       </div>
@@ -113,7 +128,7 @@ export default function Home() {
     return (
       <div className="min-h-screen bg-zinc-50 py-8">
         <LearningSession
-          userId={currentUser?.id}
+          userId={currentUser!.id}
           session={currentSession}
           onComplete={handleSessionComplete}
           onExit={handleExitSession}

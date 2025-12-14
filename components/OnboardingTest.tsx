@@ -90,7 +90,7 @@ export function OnboardingTest({ userId, onComplete }: OnboardingTestProps) {
   }, [testStarted, startOnboarding]);
 
   const submitAnswer = async () => {
-    if (!selectedOption || !currentQuestion) return;
+    if (!test || !selectedOption || !currentQuestion) return;
 
     setIsSubmitting(true);
     try {
@@ -166,7 +166,7 @@ export function OnboardingTest({ userId, onComplete }: OnboardingTestProps) {
           <div className="text-center space-y-6">
             <div className="space-y-4">
               <p className="text-gray-600">
-                We'll assess your vocabulary level through a series of questions. 
+                We&apos;ll assess your vocabulary level through a series of questions.
                 This will help us personalize your learning experience.
               </p>
               

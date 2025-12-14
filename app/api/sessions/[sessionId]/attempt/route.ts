@@ -5,14 +5,16 @@ import { db } from '../../../../../lib/database';
 // POST /api/sessions/[sessionId]/attempt - Process a session attempt
 export async function POST(
   request: NextRequest,
-  { params }: { params: { sessionId: string } }
+  context: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const { sessionId } = params;
-    const body = await request.json();
-    const { userWordId, userAnswer, isCorrect, timeSpent, confidence, hint } = body;
+    await db.ensureSeeded();
 
-    if (!sessionId || !userWordId || userAnswer === undefined || isCorrect === undefined) {
+    const { sessionId } = await context.params;
+    const body = await request.json();
+    const { userId, userWordId, userAnswer, isCorrect, timeSpent, confidence, hint } = body;
+
+    if (!sessionId || !userId || !userWordId || userAnswer === undefined || isCorrect === undefined) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -20,6 +22,10 @@ export async function POST(
     const session = await db.getDailySession(sessionId);
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    if (session.userId !== userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
     if (session.isCompleted) {
@@ -54,10 +60,10 @@ export async function POST(
 // GET /api/sessions/[sessionId]/attempt - Get session attempts
 export async function GET(
   request: NextRequest,
-  { params }: { params: { sessionId: string } }
+  context: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const { sessionId } = params;
+    const { sessionId } = await context.params;
     const { searchParams } = new URL(request.url);
     const userWordId = searchParams.get('userWordId');
 

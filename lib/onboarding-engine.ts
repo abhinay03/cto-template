@@ -102,7 +102,7 @@ class OnboardingEngine {
         difficulty: 2,
         options: [
           { id: 'f1', text: 'eloquent', isCorrect: true, explanation: 'Eloquent means fluent and persuasive in speaking' },
-          { id: 'f2', text: 'eloquent', isCorrect: true },
+          { id: 'f2', text: 'meticulous', isCorrect: false },
           { id: 'f3', text: 'ignorant', isCorrect: false }
         ],
         correctAnswer: 'f1',
@@ -120,6 +120,58 @@ class OnboardingEngine {
         ],
         correctAnswer: 'g1',
         weakArea: 'verbs'
+      },
+      {
+        id: 'cu3',
+        type: 'contextual_usage',
+        question: 'Choose the word that best completes the sentence: "Could I _____ your notes for a moment?"',
+        difficulty: 2,
+        options: [
+          { id: 'h1', text: 'borrow', isCorrect: true },
+          { id: 'h2', text: 'lend', isCorrect: false },
+          { id: 'h3', text: 'forget', isCorrect: false }
+        ],
+        correctAnswer: 'h1',
+        weakArea: 'verbs'
+      },
+      {
+        id: 'mm3',
+        type: 'meaning_match',
+        question: 'What does "curious" mean?',
+        difficulty: 2,
+        options: [
+          { id: 'i1', text: 'Wanting to know or learn something', isCorrect: true },
+          { id: 'i2', text: 'Feeling sleepy', isCorrect: false },
+          { id: 'i3', text: 'Being very angry', isCorrect: false }
+        ],
+        correctAnswer: 'i1',
+        weakArea: 'conversational'
+      },
+      {
+        id: 'sm1',
+        type: 'synonym_match',
+        question: 'Which word is closest in meaning to "happy"?',
+        difficulty: 1,
+        options: [
+          { id: 'j1', text: 'glad', isCorrect: true },
+          { id: 'j2', text: 'tired', isCorrect: false },
+          { id: 'j3', text: 'angry', isCorrect: false }
+        ],
+        correctAnswer: 'j1',
+        weakArea: 'conversational'
+      },
+      {
+        id: 'qr4',
+        type: 'word_recognition',
+        question: 'Do you know the word "obfuscate"?',
+        difficulty: 5,
+        options: [
+          { id: 'k1', text: 'Know it well', isCorrect: true },
+          { id: 'k2', text: 'Heard it before', isCorrect: false },
+          { id: 'k3', text: 'Don\'t know', isCorrect: false }
+        ],
+        correctAnswer: 'k1',
+        weakArea: 'academic_vocabulary'
       }
     );
   }
@@ -145,83 +197,78 @@ class OnboardingEngine {
     return await db.createOnboardingTest(test);
   }
 
+  private readonly MAX_QUESTIONS = 12;
+
   async getNextQuestion(testId: string): Promise<OnboardingQuestion | null> {
-    const test = this.onboardingTests.get(testId);
+    const test = await db.getOnboardingTestById(testId);
     if (!test || test.isCompleted) return null;
 
-    const currentIndex = test.currentQuestionIndex;
-    if (currentIndex >= this.questions.length) return null;
+    if (test.answers.length >= this.MAX_QUESTIONS) return null;
 
-    // Adaptive difficulty adjustment based on previous answers
-    if (currentIndex > 0) {
-      const recentAnswers = test.answers.slice(-3);
-      const correctRate = recentAnswers.filter(a => a.isCorrect).length / recentAnswers.length;
-      
-      if (correctRate < 0.3) {
-        // User struggling, adjust to easier questions
-        const easierQuestion = this.questions.find(q => q.difficulty <= 2 && !test.answers.find(a => a.questionId === q.id));
-        if (easierQuestion) return easierQuestion;
-      } else if (correctRate > 0.8) {
-        // User doing well, try harder questions
-        const harderQuestion = this.questions.find(q => q.difficulty >= 4 && !test.answers.find(a => a.questionId === q.id));
-        if (harderQuestion) return harderQuestion;
-      }
-    }
+    const answeredIds = new Set(test.answers.map(a => a.questionId));
+    const remaining = this.questions.filter(q => !answeredIds.has(q.id));
+    if (remaining.length === 0) return null;
 
-    return this.questions[currentIndex];
+    const targetDifficulty = this.getTargetDifficulty(test.answers);
+
+    const sortedCandidates = remaining
+      .map(q => ({ q, delta: Math.abs(q.difficulty - targetDifficulty) }))
+      .sort((a, b) => a.delta - b.delta || b.q.difficulty - a.q.difficulty);
+
+    return sortedCandidates[0]?.q ?? null;
   }
 
   async submitAnswer(testId: string, answer: Omit<OnboardingAnswer, 'timestamp'>): Promise<boolean> {
-    const test = this.onboardingTests.get(testId);
+    const test = await db.getOnboardingTestById(testId);
     if (!test || test.isCompleted) return false;
 
     const question = this.questions.find(q => q.id === answer.questionId);
     if (!question) return false;
+
+    if (test.answers.some(a => a.questionId === answer.questionId)) {
+      return false;
+    }
 
     const fullAnswer: OnboardingAnswer = {
       ...answer,
       timestamp: new Date()
     };
 
-    test.answers.push(fullAnswer);
-    test.currentQuestionIndex++;
+    const updatedAnswers = [...test.answers, fullAnswer];
 
-    // Update test
     await db.updateOnboardingTest(testId, {
-      answers: test.answers,
-      currentQuestionIndex: test.currentQuestionIndex
+      answers: updatedAnswers,
+      currentQuestionIndex: updatedAnswers.length
     });
 
     return true;
   }
 
   async completeOnboarding(testId: string): Promise<TestResult> {
-    const test = this.onboardingTests.get(testId);
+    const test = await db.getOnboardingTestById(testId);
     if (!test) throw new Error('Test not found');
 
-    // Calculate results
     const totalQuestions = test.answers.length;
+    if (totalQuestions === 0) {
+      throw new Error('No answers submitted');
+    }
+
     const correctAnswers = test.answers.filter(a => a.isCorrect).length;
     const averageTime = test.answers.reduce((sum, a) => sum + a.timeSpent, 0) / totalQuestions;
     const averageConfidence = test.answers.reduce((sum, a) => sum + a.confidence, 0) / totalQuestions;
 
-    // Calculate vocabulary level score (0-100)
     const baseScore = (correctAnswers / totalQuestions) * 60;
     const difficultyBonus = this.calculateDifficultyBonus(test.answers, this.questions);
     const vocabularyLevelScore = Math.min(100, Math.round(baseScore + difficultyBonus));
 
-    // Identify weak areas
     const weakAreas = this.identifyWeakAreas(test.answers, this.questions);
 
-    // Calculate confidence score (0-1)
     const confidenceScore = averageConfidence / 100;
 
-    // Calculate retention risk index (0-1, higher = more risk)
     const errorRate = 1 - (correctAnswers / totalQuestions);
-    const timePenalty = Math.max(0, (averageTime - 30) / 60); // Penalty for taking too long
+    const timePenalty = Math.max(0, (averageTime - 30) / 60);
     const retentionRiskIndex = Math.min(1, errorRate + timePenalty * 0.3);
 
-    // Update test as completed
     await db.updateOnboardingTest(testId, {
       isCompleted: true,
       vocabularyLevelScore,
@@ -237,15 +284,33 @@ class OnboardingEngine {
     };
   }
 
-  private calculateDifficultyBonus(answers: OnboardingQuestion[], questions: OnboardingQuestion[]): number {
+  private getTargetDifficulty(answers: OnboardingAnswer[]): number {
+    if (answers.length === 0) return 3;
+
+    const recentAnswers = answers.slice(-3);
+    const correctRate = recentAnswers.filter(a => a.isCorrect).length / recentAnswers.length;
+
+    const avgDifficulty = recentAnswers.reduce((sum, a) => {
+      const questionDifficulty = this.questions.find(q => q.id === a.questionId)?.difficulty ?? 3;
+      return sum + questionDifficulty;
+    }, 0) / recentAnswers.length;
+
+    let target = Math.round(avgDifficulty);
+    if (correctRate > 0.8) target += 1;
+    if (correctRate < 0.4) target -= 1;
+
+    return Math.max(1, Math.min(5, target));
+  }
+
+  private calculateDifficultyBonus(answers: OnboardingAnswer[], questions: OnboardingQuestion[]): number {
     let bonus = 0;
-    answers.forEach(answer => {
+    for (const answer of answers) {
       const question = questions.find(q => q.id === answer.questionId);
       if (question && answer.isCorrect) {
-        bonus += question.difficulty * 2; // Higher difficulty questions give more bonus
+        bonus += question.difficulty * 2;
       }
-    });
-    return Math.min(40, bonus); // Cap at 40 points
+    }
+    return Math.min(40, bonus);
   }
 
   private identifyWeakAreas(answers: OnboardingAnswer[], questions: OnboardingQuestion[]): WeakArea[] {
@@ -285,8 +350,6 @@ class OnboardingEngine {
     if (score >= 30) return 'A2';
     return 'A1';
   }
-
-  private onboardingTests = new Map<string, OnboardingTest>();
 }
 
 export const onboardingEngine = new OnboardingEngine();

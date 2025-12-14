@@ -1,5 +1,6 @@
 // Daily Session Management Engine
 import { 
+  CEFRLevel,
   DailySession, SessionWord, SessionAttempt, 
   ActivityType, Priority, WordState, WeakArea, UserWord, Word, LearningAnalytics
 } from '../types';
@@ -40,10 +41,10 @@ class SessionEngine {
     }
 
     // Calculate dynamic session size based on user performance
-    const adjustedConfig = this.adjustSessionConfiguration(config, analytics, []);
+    const adjustedConfig = this.adjustSessionConfiguration(config, analytics);
 
     // Create session words based on user progress
-    const sessionWords = await this.createSessionWords(userId, adjustedConfig, user.weakAreas);
+    const sessionWords = await this.createSessionWords(userId, adjustedConfig);
 
     const sessionData: Omit<DailySession, 'id'> = {
       userId,
@@ -90,11 +91,7 @@ class SessionEngine {
     });
 
     // Update user word in database using SRS engine
-    await srsEngine.scheduleNextReview(
-      userWordId, 
-      sessionWord.attempts, 
-      sessionWord.attempts.length > 1 && attempt.isCorrect ? 'learning' : 'weak'
-    );
+    await srsEngine.scheduleNextReview(userWordId, sessionWord.attempts);
 
     // Update session progress
     if (attempt.isCorrect) {
@@ -147,7 +144,7 @@ class SessionEngine {
 
     // Determine activity type based on performance and word state
     let activityType: ActivityType;
-    const difficulty = word.difficultyLevel;
+    const difficulty = this.cefrToDifficulty(word.difficultyLevel);
     let hints: string[] = [];
 
     if (!wasCorrect) {
@@ -213,43 +210,60 @@ class SessionEngine {
   }
 
   private async createSessionWords(
-    userId: string, 
-    config: SessionConfiguration, 
-    userWeakAreas: WeakArea[]
+    userId: string,
+    config: SessionConfiguration
   ): Promise<SessionWord[]> {
-    const sessionWords: SessionWord[] = [];
-
     // Get words for each category
     const newWords = await this.selectNewWords(userId, Math.ceil(config.totalWords * config.newWordsPercentage / 100));
     const weakWords = await this.selectWeakWords(userId, Math.ceil(config.totalWords * config.weakWordsPercentage / 100));
     const revisionWords = await this.selectRevisionWords(userId, Math.ceil(config.totalWords * config.revisionPercentage / 100));
     const challengeWords = await this.selectChallengeWords(userId, Math.ceil(config.totalWords * config.challengePercentage / 100));
 
-    // Combine and prioritize
-    const allWords = [...newWords, ...weakWords, ...revisionWords, ...challengeWords];
-    
-    // Convert to session words with appropriate activities
-    for (const userWord of allWords) {
-      const activityType = this.determineActivityType(userWord.wordState, userWeakAreas);
+    const combined = [...newWords, ...weakWords, ...revisionWords, ...challengeWords];
+
+    const byUserWordId = new Map<string, UserWord>();
+    for (const userWord of combined) {
+      byUserWordId.set(userWord.id, userWord);
+    }
+
+    // If we didn't have enough content, backfill with additional new words
+    if (byUserWordId.size < config.totalWords) {
+      const remaining = config.totalWords - byUserWordId.size;
+      const backfill = await this.selectNewWords(userId, remaining);
+      for (const userWord of backfill) {
+        byUserWordId.set(userWord.id, userWord);
+      }
+    }
+
+    const priorityRank: Record<Priority, number> = {
+      critical: 0,
+      high: 1,
+      medium: 2,
+      low: 3
+    };
+
+    const sessionWords = Array.from(byUserWordId.values()).map((userWord): SessionWord => {
+      const activityType = this.determineActivityType(userWord.wordState);
       const priority = this.calculateWordPriority(userWord);
-      
-      sessionWords.push({
+
+      return {
         userWordId: userWord.id,
         wordId: userWord.wordId,
         activityType,
         priority,
         isCompleted: false,
         attempts: []
-      });
-    }
+      };
+    });
 
-    return sessionWords.slice(0, config.totalWords);
+    return sessionWords
+      .sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority])
+      .slice(0, config.totalWords);
   }
 
   private adjustSessionConfiguration(
-    config: SessionConfiguration, 
-    analytics: LearningAnalytics | null, 
-    userWords: UserWord[]
+    config: SessionConfiguration,
+    analytics: LearningAnalytics | null
   ): SessionConfiguration {
     const adjusted = { ...config };
 
@@ -273,31 +287,92 @@ class SessionEngine {
   }
 
   private async selectNewWords(userId: string, count: number): Promise<UserWord[]> {
-    // In a real implementation, this would select new words based on user's level
-    // and words they haven't learned yet
-    const existingUserWords = await db.getUserWords(userId);
-    const learnedWordIds = existingUserWords.map(uw => uw.wordId);
+    if (count <= 0) return [];
 
-    // For now, return some words from database that user hasn't learned
-    const availableWords: UserWord[] = []; // Would query words not in learnedWordIds
-    return availableWords.slice(0, count);
+    const user = await db.getUser(userId);
+    if (!user) return [];
+
+    const existingUserWords = await db.getUserWords(userId);
+
+    const existingNewWords = existingUserWords
+      .filter(uw => uw.wordState === 'new')
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(0, count);
+
+    const remainingToCreate = count - existingNewWords.length;
+    if (remainingToCreate <= 0) return existingNewWords;
+
+    const learnedWordIds = new Set(existingUserWords.map(uw => uw.wordId));
+
+    const targetLevel = this.scoreToCEFR(user.vocabularyLevelScore);
+    const levelBand = this.getLevelBand(targetLevel);
+
+    const posBoost = (word: Word): number => {
+      if (user.weakAreas.includes('verbs') && word.partOfSpeech === 'verb') return 3;
+      if (user.weakAreas.includes('adjectives') && word.partOfSpeech === 'adjective') return 3;
+      if (user.weakAreas.includes('nouns') && word.partOfSpeech === 'noun') return 3;
+      if (user.weakAreas.includes('adverbs') && word.partOfSpeech === 'adverb') return 3;
+      return 0;
+    };
+
+    const candidates = (await db.getAllWords())
+      .filter(w => levelBand.includes(w.difficultyLevel) && !learnedWordIds.has(w.id))
+      .sort((a, b) => (posBoost(b) - posBoost(a)) || (b.frequencyScore - a.frequencyScore));
+
+    const selected = candidates.slice(0, remainingToCreate);
+
+    const created: UserWord[] = [];
+    for (const word of selected) {
+      created.push(await srsEngine.initializeNewWord(userId, word.id));
+    }
+
+    return [...existingNewWords, ...created];
   }
 
   private async selectWeakWords(userId: string, count: number): Promise<UserWord[]> {
-    return await db.getWordsByState(userId, 'weak');
+    if (count <= 0) return [];
+
+    const weakWords = await db.getWordsByState(userId, 'weak');
+    return weakWords
+      .sort((a, b) => a.nextRevisionDate.getTime() - b.nextRevisionDate.getTime() || a.confidenceRating - b.confidenceRating)
+      .slice(0, count);
   }
 
   private async selectRevisionWords(userId: string, count: number): Promise<UserWord[]> {
+    if (count <= 0) return [];
     return await db.getWordsForRevision(userId, count);
   }
 
   private async selectChallengeWords(userId: string, count: number): Promise<UserWord[]> {
-    // Get mastered or known words for challenge activities
+    if (count <= 0) return [];
+
     const userWords = await db.getUserWords(userId);
-    return userWords.filter(uw => uw.wordState === 'known' || uw.wordState === 'mastered').slice(0, count);
+
+    return userWords
+      .filter(uw => uw.wordState === 'known' || uw.wordState === 'mastered')
+      .sort((a, b) => b.familiarityScore - a.familiarityScore)
+      .slice(0, count);
   }
 
-  private determineActivityType(wordState: WordState, userWeakAreas: WeakArea[]): ActivityType {
+  private scoreToCEFR(score: number): CEFRLevel {
+    if (score >= 90) return 'C2';
+    if (score >= 75) return 'C1';
+    if (score >= 60) return 'B2';
+    if (score >= 45) return 'B1';
+    if (score >= 30) return 'A2';
+    return 'A1';
+  }
+
+  private getLevelBand(level: CEFRLevel): CEFRLevel[] {
+    const order: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+    const idx = order.indexOf(level);
+    const lower = order[Math.max(0, idx - 1)];
+    const upper = order[Math.min(order.length - 1, idx + 1)];
+
+    return Array.from(new Set([lower, level, upper]));
+  }
+
+  private determineActivityType(wordState: WordState): ActivityType {
     const activityMap: { [key in WordState]: ActivityType } = {
       'new': 'flashcard',
       'learning': 'mcq',
@@ -341,6 +416,19 @@ class SessionEngine {
     const baseInterval = wasCorrect ? 3 : 1; // days
     const familiarityMultiplier = Math.max(0.5, familiarityScore);
     return Math.ceil(baseInterval * familiarityMultiplier);
+  }
+
+  private cefrToDifficulty(level: CEFRLevel): number {
+    const map: Record<CEFRLevel, number> = {
+      A1: 1,
+      A2: 2,
+      B1: 3,
+      B2: 4,
+      C1: 5,
+      C2: 5
+    };
+
+    return map[level];
   }
 
   private async identifyWeakAreasFromSession(completedWords: SessionWord[]): Promise<WeakArea[]> {

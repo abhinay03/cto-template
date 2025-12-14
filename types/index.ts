@@ -68,6 +68,14 @@ export interface UserWord {
   confidenceRating: number;
   errorHistory: ErrorRecord[];
   wordState: WordState;
+
+  // Optional SRS fields to improve scheduling/state transitions
+  srsEaseFactor?: number;
+  srsInterval?: number;
+  srsRepetition?: number;
+  srsConsecutiveCorrect?: number;
+  srsConsecutiveIncorrect?: number;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -116,6 +124,7 @@ export interface OnboardingAnswer {
   timeSpent: number;
   confidence: number;
   isCorrect: boolean;
+  timestamp: Date;
 }
 
 export interface DailySession {

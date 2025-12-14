@@ -12,6 +12,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
 
+    await db.ensureSeeded();
+
     // Check if user has completed onboarding
     const user = await db.getUser(userId);
     if (!user) {
