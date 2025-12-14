@@ -267,18 +267,21 @@ class SessionEngine {
   ): SessionConfiguration {
     const adjusted = { ...config };
 
+    const retentionRate = analytics?.retentionRate ?? 0;
+    const averageTimePerWord = analytics?.averageTimePerWord ?? 0;
+
     // Adjust based on retention rate
-    if (analytics?.retentionRate < 0.6) {
+    if (retentionRate < 0.6) {
       // User struggling, increase revision percentage
       adjusted.revisionPercentage = Math.min(50, adjusted.revisionPercentage + 10);
       adjusted.newWordsPercentage = Math.max(20, adjusted.newWordsPercentage - 10);
-    } else if (analytics?.retentionRate > 0.8) {
+    } else if (retentionRate > 0.8) {
       // User doing well, increase challenge percentage
       adjusted.challengePercentage = Math.min(25, adjusted.challengePercentage + 5);
     }
 
     // Adjust session length based on user performance
-    if (analytics?.averageTimePerWord > 30) {
+    if (averageTimePerWord > 30) {
       // User taking too long per word, reduce session size
       adjusted.totalWords = Math.max(10, adjusted.totalWords - 3);
     }

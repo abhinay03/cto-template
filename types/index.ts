@@ -159,6 +159,12 @@ export interface SessionAttempt {
   hint: boolean;
 }
 
+export interface ErrorPattern {
+  errorType: ErrorType;
+  count: number;
+  lastOccurred: Date;
+}
+
 export interface LearningAnalytics {
   userId: string;
   retentionRate: number;
