@@ -165,7 +165,7 @@ export function OnboardingTest({ userId, onComplete }: OnboardingTestProps) {
         <CardContent>
           <div className="text-center space-y-6">
             <div className="space-y-4">
-              <p className="text-gray-600">
+              <p className="text-gray-700">
                 We&apos;ll assess your vocabulary level through a series of questions.
                 This will help us personalize your learning experience.
               </p>
@@ -200,7 +200,7 @@ export function OnboardingTest({ userId, onComplete }: OnboardingTestProps) {
         <CardContent>
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Preparing your assessment...</p>
+            <p className="mt-4 text-gray-700">Preparing your assessment...</p>
           </div>
         </CardContent>
       </Card>

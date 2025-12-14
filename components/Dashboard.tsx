@@ -168,7 +168,7 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
                     Education Level
                   </label>
                   <select
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                     value={formData.educationLevel}
                     onChange={(e) => setFormData(prev => ({ ...prev, educationLevel: e.target.value }))}
                     required
@@ -187,7 +187,7 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
                     Learning Purpose
                   </label>
                   <select
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                     value={formData.purpose}
                     onChange={(e) => setFormData(prev => ({ ...prev, purpose: e.target.value }))}
                     required
@@ -205,7 +205,7 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
                     Reading Habit
                   </label>
                   <select
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                     value={formData.readingHabit}
                     onChange={(e) => setFormData(prev => ({ ...prev, readingHabit: e.target.value }))}
                     required
@@ -222,7 +222,7 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
                     Preferred Content Type
                   </label>
                   <select
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    className="block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                     value={formData.preferredContentType}
                     onChange={(e) => setFormData(prev => ({ ...prev, preferredContentType: e.target.value }))}
                     required
@@ -263,7 +263,7 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Welcome back!</h1>
-          <p className="text-gray-600">Continue your vocabulary learning journey</p>
+          <p className="text-gray-700">Continue your vocabulary learning journey</p>
         </div>
         <Button 
           variant="outline" 
@@ -278,21 +278,21 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
         <Card>
           <CardContent className="text-center">
             <div className="text-3xl font-bold text-blue-600">{stats.wordsLearned}</div>
-            <div className="text-sm text-gray-600">Words Learned</div>
+            <div className="text-sm text-gray-700">Words Learned</div>
           </CardContent>
         </Card>
         
         <Card>
           <CardContent className="text-center">
             <div className="text-3xl font-bold text-orange-600">{stats.streakDays}</div>
-            <div className="text-sm text-gray-600">Day Streak</div>
+            <div className="text-sm text-gray-700">Day Streak</div>
           </CardContent>
         </Card>
         
         <Card>
           <CardContent className="text-center">
             <div className="text-3xl font-bold text-green-600">{stats.totalSessions}</div>
-            <div className="text-sm text-gray-600">Sessions Completed</div>
+            <div className="text-sm text-gray-700">Sessions Completed</div>
           </CardContent>
         </Card>
         
@@ -301,7 +301,7 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
             <div className={`text-3xl font-bold ${getProgressColor(stats.accuracy)}`}>
               {stats.accuracy}%
             </div>
-            <div className="text-sm text-gray-600">Average Accuracy</div>
+            <div className="text-sm text-gray-700">Average Accuracy</div>
           </CardContent>
         </Card>
       </div>

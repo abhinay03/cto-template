@@ -160,7 +160,7 @@ export function LearningSession({ userId, session, onComplete, onExit }: Learnin
           <div className="text-center space-y-6">
             <div className="space-y-4">
               <h2 className="text-3xl font-bold text-gray-900">{currentWord.word}</h2>
-              <p className="text-lg text-gray-600">{currentWord.phonetics}</p>
+              <p className="text-lg text-gray-700">{currentWord.phonetics}</p>
               <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                 {currentWord.partOfSpeech}
               </span>
@@ -190,7 +190,7 @@ export function LearningSession({ userId, session, onComplete, onExit }: Learnin
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900">{currentWord.word}</h2>
-              <p className="text-lg text-gray-600">What does this word mean?</p>
+              <p className="text-lg text-gray-700">What does this word mean?</p>
             </div>
 
             <div className="space-y-3">
@@ -217,12 +217,12 @@ export function LearningSession({ userId, session, onComplete, onExit }: Learnin
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900 mb-2">{currentWord.word}</h2>
-              <p className="text-gray-600">Create a sentence using this word correctly</p>
+              <p className="text-gray-700">Create a sentence using this word correctly</p>
             </div>
 
             <div className="max-w-lg mx-auto">
               <textarea
-                className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full rounded-lg border border-gray-300 bg-white p-4 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                 rows={3}
                 placeholder="Write your sentence here..."
                 value={userAnswer}
@@ -351,13 +351,13 @@ export function LearningSession({ userId, session, onComplete, onExit }: Learnin
               <div className="text-2xl font-bold text-green-600">
                 {attempts.filter(a => a.isCorrect).length}
               </div>
-              <div className="text-sm text-gray-600">Correct</div>
+              <div className="text-sm text-gray-700">Correct</div>
             </div>
             <div>
               <div className="text-2xl font-bold text-red-600">
                 {attempts.filter(a => !a.isCorrect).length}
               </div>
-              <div className="text-sm text-gray-600">Incorrect</div>
+              <div className="text-sm text-gray-700">Incorrect</div>
             </div>
             <div>
               <div className="text-2xl font-bold text-blue-600">
