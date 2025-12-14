@@ -41,6 +41,11 @@ class DatabaseService {
     return this.users.get(id) || null;
   }
 
+  async getUserByEmail(email: string): Promise<User | null> {
+    const lower = email.toLowerCase();
+    return Array.from(this.users.values()).find(u => u.email.toLowerCase() === lower) || null;
+  }
+
   async getAllUsers(): Promise<User[]> {
     return Array.from(this.users.values());
   }

@@ -7,6 +7,7 @@ import { Input } from './ui/Input';
 
 interface User {
   id: string;
+  email: string;
   primaryLanguage: string;
   educationLevel: string;
   purpose: string;
@@ -36,9 +37,10 @@ interface DashboardProps {
   user: User | null;
   onUserCreated: (user: User) => void;
   onSessionStart: (session: Session) => void;
+  onStartAssessment?: () => void;
 }
 
-export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProps) {
+export function Dashboard({ user, onUserCreated, onSessionStart, onStartAssessment }: DashboardProps) {
   const [showUserForm, setShowUserForm] = useState(false);
   const [formData, setFormData] = useState({
     primaryLanguage: '',
@@ -52,35 +54,77 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
     wordsLearned: 0,
     streakDays: 0,
     totalSessions: 0,
-    accuracy: 0
+    accuracy: 0,
+    nextReviewCount: 0
   });
 
   useEffect(() => {
-    const loadUserStats = async () => {
+    if (!user) return;
+
+    setFormData({
+      primaryLanguage: user.primaryLanguage,
+      educationLevel: user.educationLevel,
+      purpose: user.purpose,
+      readingHabit: user.readingHabit,
+      preferredContentType: user.preferredContentType
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const load = async () => {
       try {
-        // Load recent sessions
-        const sessionsResponse = await fetch(`/api/sessions?userId=${user!.id}&limit=5`);
+        const [sessionsResponse, analyticsResponse] = await Promise.all([
+          fetch('/api/sessions?limit=5'),
+          fetch('/api/analytics')
+        ]);
+
         const sessionsData = await sessionsResponse.json();
-        
-        if (sessionsData.sessions) {
+        const analyticsData = await analyticsResponse.json();
+
+        if (sessionsResponse.ok && sessionsData.sessions) {
           setRecentSessions(sessionsData.sessions);
         }
 
-        // Calculate basic stats
-        const wordsLearned = Math.floor(Math.random() * 150) + 50; // Mock data
-        const streakDays = Math.floor(Math.random() * 10) + 1; // Mock data
-        const totalSessions = sessionsData.sessions?.length || 0;
-        const accuracy = totalSessions > 0 ? Math.round(Math.random() * 30 + 70) : 0; // Mock accuracy
-
-        setStats({ wordsLearned, streakDays, totalSessions, accuracy });
+        if (analyticsResponse.ok) {
+          setStats({
+            wordsLearned: analyticsData.wordsLearned ?? 0,
+            streakDays: analyticsData.streakDays ?? 0,
+            totalSessions: analyticsData.totalSessions ?? 0,
+            accuracy: analyticsData.accuracy ?? 0,
+            nextReviewCount: analyticsData.nextReviewCount ?? 0
+          });
+        }
       } catch (error) {
         console.error('Error loading user stats:', error);
       }
     };
 
-    if (user) {
-      loadUserStats();
-    }
+    load();
+
+    const source = new EventSource('/api/realtime');
+    const onAnalytics = (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data);
+        setStats({
+          wordsLearned: payload.wordsLearned ?? 0,
+          streakDays: payload.streakDays ?? 0,
+          totalSessions: payload.totalSessions ?? 0,
+          accuracy: payload.accuracy ?? 0,
+          nextReviewCount: payload.nextReviewCount ?? 0
+        });
+      } catch {
+        // ignore
+      }
+    };
+
+    source.addEventListener('analytics', onAnalytics);
+
+    return () => {
+      source.removeEventListener('analytics', onAnalytics);
+      source.close();
+    };
   }, [user]);
 
   const createUser = async () => {
@@ -114,7 +158,7 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ userId: user.id }),
+        body: JSON.stringify({}),
       });
 
       const data = await response.json();
@@ -125,6 +169,14 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
       }
     } catch (error) {
       console.error('Error starting session:', error);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      window.location.href = '/';
     }
   };
 
@@ -265,12 +317,17 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
           <h1 className="text-3xl font-bold text-gray-900">Welcome back!</h1>
           <p className="text-gray-700">Continue your vocabulary learning journey</p>
         </div>
-        <Button 
-          variant="outline" 
-          onClick={() => setShowUserForm(true)}
-        >
-          Edit Profile
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button 
+            variant="outline" 
+            onClick={() => setShowUserForm(true)}
+          >
+            Edit Profile
+          </Button>
+          <Button variant="outline" onClick={logout}>
+            Log out
+          </Button>
+        </div>
       </div>
 
       {/* Quick Stats */}
@@ -371,6 +428,8 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
             <Button 
               variant="outline" 
               className="w-full"
+              onClick={onStartAssessment}
+              disabled={!onStartAssessment}
             >
               Take Assessment
             </Button>
@@ -466,8 +525,8 @@ export function Dashboard({ user, onUserCreated, onSessionStart }: DashboardProp
               <div className="text-lg font-semibold text-gray-900 mb-2">
                 Next Review
               </div>
-              <div className="text-3xl font-bold text-purple-600">2</div>
-              <div className="text-sm text-gray-600 mt-1">
+              <div className="text-3xl font-bold text-purple-600">{stats.nextReviewCount}</div>
+              <div className="text-sm text-gray-700 mt-1">
                 Words ready for review
               </div>
             </div>

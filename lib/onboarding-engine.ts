@@ -218,7 +218,10 @@ class OnboardingEngine {
     return sortedCandidates[0]?.q ?? null;
   }
 
-  async submitAnswer(testId: string, answer: Omit<OnboardingAnswer, 'timestamp'>): Promise<boolean> {
+  async submitAnswer(
+    testId: string,
+    answer: Pick<OnboardingAnswer, 'questionId' | 'selectedOptionId' | 'timeSpent' | 'confidence'>
+  ): Promise<boolean> {
     const test = await db.getOnboardingTestById(testId);
     if (!test || test.isCompleted) return false;
 
@@ -229,8 +232,11 @@ class OnboardingEngine {
       return false;
     }
 
+    const isCorrect = answer.selectedOptionId === question.correctAnswer;
+
     const fullAnswer: OnboardingAnswer = {
       ...answer,
+      isCorrect,
       timestamp: new Date()
     };
 

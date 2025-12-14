@@ -492,30 +492,55 @@ class SessionEngine {
   }
 
   private async updateUserAnalyticsAfterSession(session: DailySession): Promise<void> {
-    const analytics = await db.getUserAnalytics(session.userId) || {
-      userId: session.userId,
-      retentionRate: 0,
-      forgettingCurve: 0,
-      averageTimePerWord: 0,
-      errorPatterns: [],
-      learningVelocity: 0,
-      weakAreaProgression: {},
-      streakDays: 0,
-      lastSessionDate: new Date()
+    const analytics =
+      (await db.getUserAnalytics(session.userId)) ||
+      {
+        userId: session.userId,
+        retentionRate: 0,
+        forgettingCurve: 0,
+        averageTimePerWord: 0,
+        errorPatterns: [],
+        learningVelocity: 0,
+        weakAreaProgression: {},
+        streakDays: 0,
+        lastSessionDate: new Date(0)
+      };
+
+    const accuracy = session.totalWords > 0 ? session.correctAnswers / session.totalWords : 0;
+    const completedWords = session.words.filter(sw => sw.isCompleted);
+
+    const avgTime = completedWords.length
+      ? completedWords.reduce(
+          (sum, sw) => sum + sw.attempts.reduce((attemptSum, attempt) => attemptSum + attempt.timeSpent, 0),
+          0
+        ) / completedWords.length
+      : 0;
+
+    const currentDate = session.completedAt || new Date();
+    const prevDate = analytics.lastSessionDate;
+
+    const startOfDay = (d: Date) => {
+      const copy = new Date(d);
+      copy.setHours(0, 0, 0, 0);
+      return copy;
     };
 
-    const accuracy = session.correctAnswers / session.totalWords;
-    const completedWords = session.words.filter(sw => sw.isCompleted);
-    const avgTime = completedWords.length > 0 ? 
-      completedWords.reduce((sum, sw) => 
-        sum + sw.attempts.reduce((attemptSum, attempt) => attemptSum + attempt.timeSpent, 0), 0
-      ) / completedWords.length : 0;
+    const prevDay = startOfDay(prevDate);
+    const currentDay = startOfDay(currentDate);
+    const diffDays = Math.round((currentDay.getTime() - prevDay.getTime()) / (1000 * 60 * 60 * 24));
+
+    const nextStreakDays = diffDays === 0
+      ? analytics.streakDays
+      : diffDays === 1
+        ? analytics.streakDays + 1
+        : 1;
 
     await db.updateUserAnalytics(session.userId, {
-      retentionRate: (analytics.retentionRate + accuracy) / 2, // Moving average
+      retentionRate: (analytics.retentionRate + accuracy) / 2,
       averageTimePerWord: (analytics.averageTimePerWord + avgTime) / 2,
-      lastSessionDate: new Date(),
-      learningVelocity: completedWords.length / (session.sessionDuration / 60) // words per minute
+      lastSessionDate: currentDate,
+      streakDays: nextStreakDays,
+      learningVelocity: session.sessionDuration > 0 ? completedWords.length / (session.sessionDuration / 60) : 0
     });
   }
 }

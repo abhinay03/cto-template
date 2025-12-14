@@ -1,12 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from './ui/Button';
 import { Card, CardHeader, CardContent } from './ui/Card';
 import { Input } from './ui/Input';
 
 interface LearningSessionProps {
-  userId: string;
   session: {
     id: string;
     words: Array<{
@@ -37,7 +36,7 @@ interface Word {
   }>;
 }
 
-export function LearningSession({ userId, session, onComplete, onExit }: LearningSessionProps) {
+export function LearningSession({ session, onComplete, onExit }: LearningSessionProps) {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [currentWord, setCurrentWord] = useState<Word | null>(null);
   const [userAnswer, setUserAnswer] = useState('');
@@ -56,6 +55,8 @@ export function LearningSession({ userId, session, onComplete, onExit }: Learnin
   } | null>(null);
   const [isCorrect, setIsCorrect] = useState(false);
   const [sessionProgress, setSessionProgress] = useState(0);
+  const [wordStartedAt, setWordStartedAt] = useState<number>(0);
+  const elapsedSecondsRef = useRef(0);
 
   const currentSessionWord = session?.words[currentWordIndex];
   const currentWordId = currentSessionWord?.wordId;
@@ -63,6 +64,8 @@ export function LearningSession({ userId, session, onComplete, onExit }: Learnin
   useEffect(() => {
     const loadWord = async () => {
       if (!currentWordId) return;
+
+      setWordStartedAt(Date.now());
 
       try {
         const response = await fetch(`/api/words/${currentWordId}`);
@@ -83,19 +86,22 @@ export function LearningSession({ userId, session, onComplete, onExit }: Learnin
     loadWord();
   }, [currentWordId]);
 
+  useEffect(() => {
+    if (!wordStartedAt) return;
+
+    elapsedSecondsRef.current = 0;
+    const intervalId = setInterval(() => {
+      elapsedSecondsRef.current = Math.max(0, Math.round((Date.now() - wordStartedAt) / 1000));
+    }, 500);
+
+    return () => clearInterval(intervalId);
+  }, [wordStartedAt]);
+
   const submitAnswer = async (answer: string) => {
     if (!currentSessionWord || !currentWord) return;
 
-    // Use a deterministic approach for simulation to avoid impure function calls
-    const answerLength = answer.length;
-    const timeSpent = Math.max(5, Math.min(25, 10 + answerLength * 2)); // Simulated time
-    const confidence = Math.max(50, Math.min(90, 60 + Math.floor(answerLength / 10) * 10)); // Simulated confidence
-    
-    // Simulate correct/incorrect based on answer length (70% correct rate for longer answers)
-    const correct =
-      (answerLength > 3 && answerLength % 10 < 7) ||
-      (answerLength <= 3 && answerLength % 10 >= 7);
-    setIsCorrect(correct);
+    const timeSpent = elapsedSecondsRef.current;
+    const confidence = 70;
 
     try {
       const response = await fetch(`/api/sessions/${session.id}/attempt`, {
@@ -104,10 +110,8 @@ export function LearningSession({ userId, session, onComplete, onExit }: Learnin
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          userId,
           userWordId: currentSessionWord.userWordId,
           userAnswer: answer,
-          isCorrect: correct,
           timeSpent,
           confidence
         }),
@@ -115,27 +119,27 @@ export function LearningSession({ userId, session, onComplete, onExit }: Learnin
 
       const data = await response.json();
       if (response.ok) {
+        setIsCorrect(Boolean(data.isCorrect));
         setFeedback(data.attemptFeedback);
         setShowFeedback(true);
-        
-        const updatedAttempts = [...attempts, {
-          userAnswer: answer,
-          isCorrect: correct,
-          timeSpent,
-          confidence
-        }];
-        setAttempts(updatedAttempts);
 
-        // Update session progress
+        setAttempts(prev => [
+          ...prev,
+          {
+            userAnswer: answer,
+            isCorrect: Boolean(data.isCorrect),
+            timeSpent,
+            confidence
+          }
+        ]);
+
         const progress = Math.round(((currentWordIndex + 1) / session.totalWords) * 100);
         setSessionProgress(progress);
 
-        // Check if session is complete
         if (data.isSessionComplete) {
-          // Session complete, call onComplete with results
           setTimeout(() => {
             onComplete(data.result);
-          }, 2000);
+          }, 1200);
         }
       } else {
         console.error('Failed to submit attempt:', data.error);
@@ -363,7 +367,7 @@ export function LearningSession({ userId, session, onComplete, onExit }: Learnin
               <div className="text-2xl font-bold text-blue-600">
                 {attempts.length > 0 ? Math.round((attempts.filter(a => a.isCorrect).length / attempts.length) * 100) : 0}%
               </div>
-              <div className="text-sm text-gray-600">Accuracy</div>
+              <div className="text-sm text-gray-700">Accuracy</div>
             </div>
           </div>
         </CardContent>

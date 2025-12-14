@@ -2,15 +2,20 @@
 
 export interface User {
   id: string;
+  email: string;
+  passwordHash: string;
+
   primaryLanguage: string;
   educationLevel: string;
   purpose: LearningPurpose;
   readingHabit: ReadingHabit;
   preferredContentType: ContentType;
+
   vocabularyLevelScore: number;
   weakAreas: WeakArea[];
   confidenceScore: number;
   retentionRiskIndex: number;
+
   createdAt: Date;
   updatedAt: Date;
 }
