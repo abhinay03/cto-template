@@ -31,7 +31,7 @@ export function Input({
       )}
       <input
         id={inputId}
-        className={`block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm ${
+        className={`block w-full rounded-md border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm ${
           error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
         } ${className}`}
         {...props}

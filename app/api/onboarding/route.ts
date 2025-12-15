@@ -1,35 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { onboardingEngine } from '../../../lib/onboarding-engine';
 import { db } from '../../../lib/database';
+import { requireUserId } from '../../../lib/auth';
 
-// POST /api/onboarding - Start a new onboarding test
+// POST /api/onboarding - Start or submit onboarding test
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { userId, action } = body;
+    await db.ensureSeeded();
 
+    const userId = await requireUserId(request);
     if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const body = await request.json();
+    const { action } = body;
+
     if (action === 'start') {
-      // Start a new onboarding test
       const test = await onboardingEngine.startOnboardingTest(userId);
       const nextQuestion = await onboardingEngine.getNextQuestion(test.id);
-      
-      return NextResponse.json({
-        test,
-        nextQuestion,
-        message: 'Onboarding test started successfully'
-      }, { status: 201 });
+
+      return NextResponse.json(
+        {
+          test,
+          nextQuestion,
+          message: 'Onboarding test started successfully'
+        },
+        { status: 201 }
+      );
     }
 
     if (action === 'submit') {
-      // Submit an answer to the current question
       const { testId, answer } = body;
-      
+
       if (!testId || !answer) {
         return NextResponse.json({ error: 'Test ID and answer are required' }, { status: 400 });
+      }
+
+      const test = await db.getOnboardingTestById(testId);
+      if (!test || test.userId !== userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
       }
 
       const submitted = await onboardingEngine.submitAnswer(testId, answer);
@@ -37,39 +47,39 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Failed to submit answer' }, { status: 400 });
       }
 
-      // Get the next question or complete the test
       const nextQuestion = await onboardingEngine.getNextQuestion(testId);
-      
+
       if (!nextQuestion) {
-        // Test is complete, get results
         const results = await onboardingEngine.completeOnboarding(testId);
-        
-        // Update user with onboarding results
-        const user = await db.getUser(userId);
-        if (user) {
-          await db.updateUser(userId, {
-            vocabularyLevelScore: results.vocabularyLevelScore,
-            weakAreas: results.weakAreas,
-            confidenceScore: results.confidenceScore,
-            retentionRiskIndex: results.retentionRiskIndex
-          });
-        }
+
+        await db.updateUser(userId, {
+          vocabularyLevelScore: results.vocabularyLevelScore,
+          weakAreas: results.weakAreas,
+          confidenceScore: results.confidenceScore,
+          retentionRiskIndex: results.retentionRiskIndex
+        });
 
         const cefrLevel = onboardingEngine.getCEFRLevel(results.vocabularyLevelScore);
 
-        return NextResponse.json({
-          isCompleted: true,
-          results,
-          cefrLevel,
-          message: 'Onboarding test completed successfully'
-        }, { status: 200 });
+        return NextResponse.json(
+          {
+            isCompleted: true,
+            results,
+            cefrLevel,
+            message: 'Onboarding test completed successfully'
+          },
+          { status: 200 }
+        );
       }
 
-      return NextResponse.json({
-        testId,
-        nextQuestion,
-        message: 'Answer submitted successfully'
-      }, { status: 200 });
+      return NextResponse.json(
+        {
+          testId,
+          nextQuestion,
+          message: 'Answer submitted successfully'
+        },
+        { status: 200 }
+      );
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
@@ -79,33 +89,39 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/onboarding - Get user's onboarding test status
+// GET /api/onboarding - Get current user's onboarding test status
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
+    await db.ensureSeeded();
 
+    const userId = await requireUserId(request);
     if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const test = await db.getOnboardingTest(userId);
-    
+
     if (!test) {
-      return NextResponse.json({ 
-        hasOnboardingTest: false,
-        message: 'No onboarding test found for user'
-      }, { status: 200 });
+      return NextResponse.json(
+        {
+          hasOnboardingTest: false,
+          message: 'No onboarding test found for user'
+        },
+        { status: 200 }
+      );
     }
 
     const nextQuestion = test.isCompleted ? null : await onboardingEngine.getNextQuestion(test.id);
 
-    return NextResponse.json({
-      test,
-      nextQuestion,
-      hasOnboardingTest: true,
-      isCompleted: test.isCompleted
-    }, { status: 200 });
+    return NextResponse.json(
+      {
+        test,
+        nextQuestion,
+        hasOnboardingTest: true,
+        isCompleted: test.isCompleted
+      },
+      { status: 200 }
+    );
   } catch (error) {
     console.error('Error fetching onboarding test:', error);
     return NextResponse.json({ error: 'Failed to fetch onboarding test' }, { status: 500 });

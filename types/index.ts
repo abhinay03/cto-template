@@ -2,15 +2,20 @@
 
 export interface User {
   id: string;
+  email: string;
+  passwordHash: string;
+
   primaryLanguage: string;
   educationLevel: string;
   purpose: LearningPurpose;
   readingHabit: ReadingHabit;
   preferredContentType: ContentType;
+
   vocabularyLevelScore: number;
   weakAreas: WeakArea[];
   confidenceScore: number;
   retentionRiskIndex: number;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -68,6 +73,14 @@ export interface UserWord {
   confidenceRating: number;
   errorHistory: ErrorRecord[];
   wordState: WordState;
+
+  // Optional SRS fields to improve scheduling/state transitions
+  srsEaseFactor?: number;
+  srsInterval?: number;
+  srsRepetition?: number;
+  srsConsecutiveCorrect?: number;
+  srsConsecutiveIncorrect?: number;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -116,6 +129,7 @@ export interface OnboardingAnswer {
   timeSpent: number;
   confidence: number;
   isCorrect: boolean;
+  timestamp: Date;
 }
 
 export interface DailySession {
@@ -148,6 +162,12 @@ export interface SessionAttempt {
   timeSpent: number;
   confidence: number;
   hint: boolean;
+}
+
+export interface ErrorPattern {
+  errorType: ErrorType;
+  count: number;
+  lastOccurred: Date;
 }
 
 export interface LearningAnalytics {

@@ -5,6 +5,8 @@ import { Word, CEFRLevel, PartOfSpeech } from '../../../types';
 // GET /api/words - Search or get words
 export async function GET(request: NextRequest) {
   try {
+    await db.ensureSeeded();
+
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q');
     const difficulty = searchParams.get('difficulty');
@@ -14,16 +16,13 @@ export async function GET(request: NextRequest) {
     let words: Word[] = [];
 
     if (query) {
-      // Search words by query
-      words = await db.searchWords(query);
+      words = (await db.searchWords(query)).slice(0, limit);
     } else if (difficulty || partOfSpeech) {
-      // Filter words by criteria
-      const allWords = await db.getWordsByDifficulty(difficulty || 'B2');
-      words = partOfSpeech ? allWords.filter(w => w.partOfSpeech === partOfSpeech) : allWords;
+      const allWords = difficulty ? await db.getWordsByDifficulty(difficulty) : await db.getAllWords();
+      const filtered = partOfSpeech ? allWords.filter(w => w.partOfSpeech === partOfSpeech) : allWords;
+      words = filtered.slice(0, limit);
     } else {
-      // Get recent words or all words
-      const allWords: Word[] = [];
-      words = allWords.slice(0, limit);
+      words = (await db.getAllWords()).slice(0, limit);
     }
 
     return NextResponse.json({ words }, { status: 200 });
@@ -36,6 +35,8 @@ export async function GET(request: NextRequest) {
 // POST /api/words - Create a new word (for admin purposes)
 export async function POST(request: NextRequest) {
   try {
+    await db.ensureSeeded();
+
     const body = await request.json();
     const { 
       word, 

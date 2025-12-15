@@ -1,12 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from './ui/Button';
 import { Card, CardHeader, CardContent } from './ui/Card';
 import { Input } from './ui/Input';
 
 interface LearningSessionProps {
-  userId: string;
   session: {
     id: string;
     words: Array<{
@@ -37,7 +36,7 @@ interface Word {
   }>;
 }
 
-export function LearningSession({ _, session, onComplete, onExit }: LearningSessionProps) {
+export function LearningSession({ session, onComplete, onExit }: LearningSessionProps) {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [currentWord, setCurrentWord] = useState<Word | null>(null);
   const [userAnswer, setUserAnswer] = useState('');
@@ -56,58 +55,53 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
   } | null>(null);
   const [isCorrect, setIsCorrect] = useState(false);
   const [sessionProgress, setSessionProgress] = useState(0);
+  const [wordStartedAt, setWordStartedAt] = useState<number>(0);
+  const elapsedSecondsRef = useRef(0);
 
   const currentSessionWord = session?.words[currentWordIndex];
-
-  const loadCurrentWord = () => {
-    try {
-      // In a real implementation, you'd fetch the word details
-      // For now, we'll simulate word data
-      const mockWord: Word = {
-        id: currentSessionWord?.wordId || '1',
-        word: "benevolent",
-        phonetics: "/bəˈnevələnt/",
-        partOfSpeech: "adjective",
-        meanings: [
-          {
-            definition: "Well-meaning and kindly",
-            translation: "Benévolo"
-          }
-        ],
-        examples: [
-          {
-            sentence: "The benevolent teacher always helped students who were struggling.",
-            level: "standard"
-          }
-        ]
-      };
-      setCurrentWord(mockWord);
-    } catch (error) {
-      console.error('Error loading word:', error);
-    }
-  };
+  const currentWordId = currentSessionWord?.wordId;
 
   useEffect(() => {
-    if (currentSessionWord) {
-      // Use setTimeout to avoid synchronous setState in effect
-      const timeoutId = setTimeout(() => {
-        loadCurrentWord();
-      }, 0);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [currentWordIndex, currentSessionWord, loadCurrentWord]);
+    const loadWord = async () => {
+      if (!currentWordId) return;
+
+      setWordStartedAt(Date.now());
+
+      try {
+        const response = await fetch(`/api/words/${currentWordId}`);
+        const data = await response.json();
+
+        if (response.ok) {
+          setCurrentWord(data.word);
+        } else {
+          setCurrentWord(null);
+          console.error('Failed to load word:', data.error);
+        }
+      } catch (error) {
+        setCurrentWord(null);
+        console.error('Error loading word:', error);
+      }
+    };
+
+    loadWord();
+  }, [currentWordId]);
+
+  useEffect(() => {
+    if (!wordStartedAt) return;
+
+    elapsedSecondsRef.current = 0;
+    const intervalId = setInterval(() => {
+      elapsedSecondsRef.current = Math.max(0, Math.round((Date.now() - wordStartedAt) / 1000));
+    }, 500);
+
+    return () => clearInterval(intervalId);
+  }, [wordStartedAt]);
 
   const submitAnswer = async (answer: string) => {
     if (!currentSessionWord || !currentWord) return;
 
-    // Use a deterministic approach for simulation to avoid impure function calls
-    const answerLength = answer.length;
-    const timeSpent = Math.max(5, Math.min(25, 10 + answerLength * 2)); // Simulated time
-    const confidence = Math.max(50, Math.min(90, 60 + Math.floor(answerLength / 10) * 10)); // Simulated confidence
-    
-    // Simulate correct/incorrect based on answer length (70% correct rate for longer answers)
-    const correct = answerLength > 3 && (answer.length % 10 < 7) || answerLength <= 3 && (answer.length % 10 >= 7);
-    setIsCorrect(correct);
+    const timeSpent = elapsedSecondsRef.current;
+    const confidence = 70;
 
     try {
       const response = await fetch(`/api/sessions/${session.id}/attempt`, {
@@ -118,7 +112,6 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
         body: JSON.stringify({
           userWordId: currentSessionWord.userWordId,
           userAnswer: answer,
-          isCorrect: correct,
           timeSpent,
           confidence
         }),
@@ -126,27 +119,27 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
 
       const data = await response.json();
       if (response.ok) {
+        setIsCorrect(Boolean(data.isCorrect));
         setFeedback(data.attemptFeedback);
         setShowFeedback(true);
-        
-        const updatedAttempts = [...attempts, {
-          userAnswer: answer,
-          isCorrect: correct,
-          timeSpent,
-          confidence
-        }];
-        setAttempts(updatedAttempts);
 
-        // Update session progress
+        setAttempts(prev => [
+          ...prev,
+          {
+            userAnswer: answer,
+            isCorrect: Boolean(data.isCorrect),
+            timeSpent,
+            confidence
+          }
+        ]);
+
         const progress = Math.round(((currentWordIndex + 1) / session.totalWords) * 100);
         setSessionProgress(progress);
 
-        // Check if session is complete
         if (data.isSessionComplete) {
-          // Session complete, call onComplete with results
           setTimeout(() => {
             onComplete(data.result);
-          }, 2000);
+          }, 1200);
         }
       } else {
         console.error('Failed to submit attempt:', data.error);
@@ -171,7 +164,7 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
           <div className="text-center space-y-6">
             <div className="space-y-4">
               <h2 className="text-3xl font-bold text-gray-900">{currentWord.word}</h2>
-              <p className="text-lg text-gray-600">{currentWord.phonetics}</p>
+              <p className="text-lg text-gray-700">{currentWord.phonetics}</p>
               <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                 {currentWord.partOfSpeech}
               </span>
@@ -182,7 +175,7 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
                 placeholder="Type the meaning of this word..."
                 value={userAnswer}
                 onChange={(e) => setUserAnswer(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && submitAnswer(userAnswer)}
+                onKeyDown={(e) => e.key === 'Enter' && submitAnswer(userAnswer)}
               />
             </div>
 
@@ -201,7 +194,7 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900">{currentWord.word}</h2>
-              <p className="text-lg text-gray-600">What does this word mean?</p>
+              <p className="text-lg text-gray-700">What does this word mean?</p>
             </div>
 
             <div className="space-y-3">
@@ -228,12 +221,12 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900 mb-2">{currentWord.word}</h2>
-              <p className="text-gray-600">Create a sentence using this word correctly</p>
+              <p className="text-gray-700">Create a sentence using this word correctly</p>
             </div>
 
             <div className="max-w-lg mx-auto">
               <textarea
-                className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full rounded-lg border border-gray-300 bg-white p-4 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                 rows={3}
                 placeholder="Write your sentence here..."
                 value={userAnswer}
@@ -362,19 +355,19 @@ export function LearningSession({ _, session, onComplete, onExit }: LearningSess
               <div className="text-2xl font-bold text-green-600">
                 {attempts.filter(a => a.isCorrect).length}
               </div>
-              <div className="text-sm text-gray-600">Correct</div>
+              <div className="text-sm text-gray-700">Correct</div>
             </div>
             <div>
               <div className="text-2xl font-bold text-red-600">
                 {attempts.filter(a => !a.isCorrect).length}
               </div>
-              <div className="text-sm text-gray-600">Incorrect</div>
+              <div className="text-sm text-gray-700">Incorrect</div>
             </div>
             <div>
               <div className="text-2xl font-bold text-blue-600">
                 {attempts.length > 0 ? Math.round((attempts.filter(a => a.isCorrect).length / attempts.length) * 100) : 0}%
               </div>
-              <div className="text-sm text-gray-600">Accuracy</div>
+              <div className="text-sm text-gray-700">Accuracy</div>
             </div>
           </div>
         </CardContent>

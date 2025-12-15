@@ -12,6 +12,19 @@ class DatabaseService {
   private dailySessions: Map<string, DailySession> = new Map();
   private analytics: Map<string, LearningAnalytics> = new Map();
 
+  private hasSeeded = false;
+
+  async ensureSeeded(): Promise<void> {
+    if (this.hasSeeded) return;
+    if (this.words.size > 0) {
+      this.hasSeeded = true;
+      return;
+    }
+
+    await this.seedDatabase();
+    this.hasSeeded = true;
+  }
+
   // User operations
   async createUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
     const user: User = {
@@ -26,6 +39,15 @@ class DatabaseService {
 
   async getUser(id: string): Promise<User | null> {
     return this.users.get(id) || null;
+  }
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const lower = email.toLowerCase();
+    return Array.from(this.users.values()).find(u => u.email.toLowerCase() === lower) || null;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return Array.from(this.users.values());
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User | null> {
@@ -43,18 +65,36 @@ class DatabaseService {
 
   // Word operations
   async createWord(wordData: Omit<Word, 'id' | 'createdAt' | 'updatedAt'>): Promise<Word> {
+    const id = this.generateId();
+    const now = new Date();
+
     const word: Word = {
       ...wordData,
-      id: this.generateId(),
-      createdAt: new Date(),
-      updatedAt: new Date()
+      id,
+      meanings: wordData.meanings.map((meaning, index) => ({
+        ...meaning,
+        id: meaning.id || `${id}-m${index}`,
+        wordId: id
+      })),
+      examples: wordData.examples.map((example, index) => ({
+        ...example,
+        id: example.id || `${id}-e${index}`,
+        wordId: id
+      })),
+      createdAt: now,
+      updatedAt: now
     };
+
     this.words.set(word.id, word);
     return word;
   }
 
   async getWord(id: string): Promise<Word | null> {
     return this.words.get(id) || null;
+  }
+
+  async getAllWords(): Promise<Word[]> {
+    return Array.from(this.words.values());
   }
 
   async getWordsByDifficulty(level: string): Promise<Word[]> {
@@ -139,8 +179,14 @@ class DatabaseService {
   }
 
   async getOnboardingTest(userId: string): Promise<OnboardingTest | null> {
-    const test = Array.from(this.onboardingTests.values()).find(t => t.userId === userId);
-    return test || null;
+    const tests = Array.from(this.onboardingTests.values()).filter(t => t.userId === userId);
+    if (tests.length === 0) return null;
+
+    return tests.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+  }
+
+  async getOnboardingTestById(testId: string): Promise<OnboardingTest | null> {
+    return this.onboardingTests.get(testId) || null;
   }
 
   async updateOnboardingTest(id: string, updates: Partial<OnboardingTest>): Promise<OnboardingTest | null> {
@@ -219,211 +265,517 @@ class DatabaseService {
 
   // Seed method for development
   async seedDatabase(): Promise<void> {
-    // Create sample words for testing
-    const sampleWords = [
+    if (this.words.size > 0) return;
+
+    const sampleWords: Array<Omit<Word, 'id' | 'createdAt' | 'updatedAt'>> = [
       {
-        word: "analyze",
-        phonetics: "/ˈænəlaɪz/",
-        partOfSpeech: "verb" as const,
-        difficultyLevel: "B2" as const,
-        frequencyScore: 75,
-        ageSuitability: ["teen", "adult"] as const,
+        word: 'apple',
+        phonetics: '/ˈæpəl/',
+        partOfSpeech: 'noun',
+        difficultyLevel: 'A1',
+        frequencyScore: 95,
+        ageSuitability: ['child', 'teen', 'adult', 'senior'],
         meanings: [
           {
-            id: "1",
-            wordId: "word1",
-            level: "standard" as const,
-            definition: "To examine something in detail to understand it better",
-            translation: "Analizar",
-            usage: "The scientist will analyze the data from the experiment."
+            id: 'apple-simple',
+            wordId: '',
+            level: 'simple',
+            definition: 'A round fruit that can be red, green, or yellow.',
+            translation: 'Manzana',
+            usage: 'I ate an apple for a snack.'
           }
         ],
         examples: [
           {
-            id: "1",
-            wordId: "word1",
-            level: "academic" as const,
-            sentence: "Researchers analyze complex systems to identify patterns.",
-            context: "Academic research",
+            id: 'apple-ex',
+            wordId: '',
+            level: 'child-friendly',
+            sentence: 'She picked a red apple from the tree.',
+            context: 'Everyday',
+            difficulty: 1
+          }
+        ],
+        semanticMetadata: {
+          synonyms: [],
+          antonyms: [],
+          confusableWords: [],
+          rootWords: [],
+          usageNotes: [],
+          commonMistakes: []
+        }
+      },
+      {
+        word: 'run',
+        phonetics: '/rʌn/',
+        partOfSpeech: 'verb',
+        difficultyLevel: 'A1',
+        frequencyScore: 98,
+        ageSuitability: ['child', 'teen', 'adult', 'senior'],
+        meanings: [
+          {
+            id: 'run-simple',
+            wordId: '',
+            level: 'simple',
+            definition: 'To move quickly on your feet.',
+            translation: 'Correr',
+            usage: 'I run to catch the bus.'
+          }
+        ],
+        examples: [
+          {
+            id: 'run-ex',
+            wordId: '',
+            level: 'child-friendly',
+            sentence: 'The dog can run very fast.',
+            context: 'Everyday',
+            difficulty: 1
+          }
+        ],
+        semanticMetadata: {
+          synonyms: ['jog'],
+          antonyms: ['walk'],
+          confusableWords: [],
+          rootWords: [],
+          usageNotes: ['Also used for machines: "The engine runs."'],
+          commonMistakes: []
+        }
+      },
+      {
+        word: 'happy',
+        phonetics: '/ˈhæpi/',
+        partOfSpeech: 'adjective',
+        difficultyLevel: 'A1',
+        frequencyScore: 97,
+        ageSuitability: ['child', 'teen', 'adult', 'senior'],
+        meanings: [
+          {
+            id: 'happy-simple',
+            wordId: '',
+            level: 'simple',
+            definition: 'Feeling good and pleased.',
+            translation: 'Feliz',
+            usage: 'She feels happy today.'
+          }
+        ],
+        examples: [
+          {
+            id: 'happy-ex',
+            wordId: '',
+            level: 'child-friendly',
+            sentence: 'He is happy because he got a gift.',
+            context: 'Everyday',
+            difficulty: 1
+          }
+        ],
+        semanticMetadata: {
+          synonyms: ['glad'],
+          antonyms: ['sad'],
+          confusableWords: [],
+          rootWords: [],
+          usageNotes: [],
+          commonMistakes: []
+        }
+      },
+      {
+        word: 'travel',
+        phonetics: '/ˈtrævəl/',
+        partOfSpeech: 'verb',
+        difficultyLevel: 'A2',
+        frequencyScore: 85,
+        ageSuitability: ['teen', 'adult', 'senior'],
+        meanings: [
+          {
+            id: 'travel-standard',
+            wordId: '',
+            level: 'standard',
+            definition: 'To go from one place to another, often far away.',
+            translation: 'Viajar',
+            usage: 'They travel to different countries each year.'
+          }
+        ],
+        examples: [
+          {
+            id: 'travel-ex',
+            wordId: '',
+            level: 'conversational',
+            sentence: 'I love to travel by train.',
+            context: 'Conversation',
+            difficulty: 2
+          }
+        ],
+        semanticMetadata: {
+          synonyms: ['journey'],
+          antonyms: [],
+          confusableWords: ['trip'],
+          rootWords: [],
+          usageNotes: [],
+          commonMistakes: []
+        }
+      },
+      {
+        word: 'borrow',
+        phonetics: '/ˈbɒrəʊ/',
+        partOfSpeech: 'verb',
+        difficultyLevel: 'A2',
+        frequencyScore: 80,
+        ageSuitability: ['teen', 'adult', 'senior'],
+        meanings: [
+          {
+            id: 'borrow-standard',
+            wordId: '',
+            level: 'standard',
+            definition: 'To take and use something for a short time, then return it.',
+            translation: 'Pedir prestado',
+            usage: 'Can I borrow your pen?'
+          }
+        ],
+        examples: [
+          {
+            id: 'borrow-ex',
+            wordId: '',
+            level: 'conversational',
+            sentence: 'May I borrow your book for the weekend?',
+            context: 'Conversation',
+            difficulty: 2
+          }
+        ],
+        semanticMetadata: {
+          synonyms: [],
+          antonyms: ['lend'],
+          confusableWords: ['lend'],
+          rootWords: [],
+          usageNotes: ['You borrow from someone; you lend to someone.'],
+          commonMistakes: ['Mixing up borrow and lend']
+        }
+      },
+      {
+        word: 'achieve',
+        phonetics: '/əˈtʃiːv/',
+        partOfSpeech: 'verb',
+        difficultyLevel: 'B1',
+        frequencyScore: 70,
+        ageSuitability: ['teen', 'adult', 'senior'],
+        meanings: [
+          {
+            id: 'achieve-standard',
+            wordId: '',
+            level: 'standard',
+            definition: 'To succeed in doing something after trying hard.',
+            translation: 'Lograr',
+            usage: 'She worked hard to achieve her goals.'
+          }
+        ],
+        examples: [
+          {
+            id: 'achieve-ex',
+            wordId: '',
+            level: 'academic',
+            sentence: 'Students can achieve better results with consistent practice.',
+            context: 'School',
             difficulty: 3
           }
         ],
         semanticMetadata: {
-          synonyms: ["examine", "study", "investigate"],
-          antonyms: ["ignore", "neglect"],
-          confusableWords: ["analyse", "analysis"],
-          rootWords: ["analysis"],
-          usageNotes: ["Common in academic and professional contexts"],
-          commonMistakes: ["Confusing with 'analyse' (British spelling)"]
+          synonyms: ['accomplish'],
+          antonyms: ['fail'],
+          confusableWords: ['receive'],
+          rootWords: [],
+          usageNotes: [],
+          commonMistakes: []
         }
       },
       {
-        word: "benevolent",
-        phonetics: "/bəˈnevələnt/",
-        partOfSpeech: "adjective" as const,
-        difficultyLevel: "B2" as const,
-        frequencyScore: 60,
-        ageSuitability: ["teen", "adult"] as const,
+        word: 'curious',
+        phonetics: '/ˈkjʊəriəs/',
+        partOfSpeech: 'adjective',
+        difficultyLevel: 'B1',
+        frequencyScore: 65,
+        ageSuitability: ['teen', 'adult', 'senior'],
         meanings: [
           {
-            id: "2",
-            wordId: "word2",
-            level: "standard" as const,
-            definition: "Well-meaning and kindly",
-            translation: "Benévolo",
-            usage: "The benevolent teacher always helped students who were struggling."
+            id: 'curious-standard',
+            wordId: '',
+            level: 'standard',
+            definition: 'Wanting to know or learn something.',
+            translation: 'Curioso',
+            usage: 'I am curious about how it works.'
           }
         ],
         examples: [
           {
-            id: "2",
-            wordId: "word2",
-            level: "academic" as const,
-            sentence: "The organization's benevolent approach to social issues earned it widespread support.",
-            context: "Formal/academic context",
+            id: 'curious-ex',
+            wordId: '',
+            level: 'conversational',
+            sentence: 'She was curious and asked many questions.',
+            context: 'Conversation',
+            difficulty: 3
+          }
+        ],
+        semanticMetadata: {
+          synonyms: ['inquisitive'],
+          antonyms: ['indifferent'],
+          confusableWords: ['serious'],
+          rootWords: [],
+          usageNotes: [],
+          commonMistakes: []
+        }
+      },
+      {
+        word: 'analyze',
+        phonetics: '/ˈænəlaɪz/',
+        partOfSpeech: 'verb',
+        difficultyLevel: 'B2',
+        frequencyScore: 75,
+        ageSuitability: ['teen', 'adult', 'senior'],
+        meanings: [
+          {
+            id: 'analyze-standard',
+            wordId: '',
+            level: 'standard',
+            definition: 'To examine something in detail to understand it better.',
+            translation: 'Analizar',
+            usage: 'The scientist will analyze the data from the experiment.'
+          }
+        ],
+        examples: [
+          {
+            id: 'analyze-ex',
+            wordId: '',
+            level: 'academic',
+            sentence: 'Researchers analyze complex systems to identify patterns.',
+            context: 'Academic research',
             difficulty: 4
           }
         ],
         semanticMetadata: {
-          synonyms: ["kind", "generous", "charitable"],
-          antonyms: ["cruel", "selfish", "malevolent"],
-          confusableWords: ["beneficial", "benevolent"],
-          rootWords: ["bene- (good)", "velent"],
-          usageNotes: ["Often used to describe people or organizations"],
-          commonMistakes: ["Confusing with 'beneficial' (which means helpful, not necessarily kind)"]
+          synonyms: ['examine', 'study', 'investigate'],
+          antonyms: ['ignore', 'neglect'],
+          confusableWords: ['analyse', 'analysis'],
+          rootWords: ['analysis'],
+          usageNotes: ['Common in academic and professional contexts'],
+          commonMistakes: ["Confusing with 'analyse' (British spelling)"]
         }
       },
       {
-        word: "ephemeral",
-        phonetics: "/ɪˈfɛmərəl/",
-        partOfSpeech: "adjective" as const,
-        difficultyLevel: "C1" as const,
-        frequencyScore: 40,
-        ageSuitability: ["adult"] as const,
+        word: 'benevolent',
+        phonetics: '/bəˈnevələnt/',
+        partOfSpeech: 'adjective',
+        difficultyLevel: 'B2',
+        frequencyScore: 60,
+        ageSuitability: ['teen', 'adult', 'senior'],
         meanings: [
           {
-            id: "3",
-            wordId: "word3",
-            level: "advanced" as const,
-            definition: "Lasting for a very short time",
-            translation: "Efímero",
-            usage: "Beauty is often described as ephemeral."
+            id: 'benevolent-standard',
+            wordId: '',
+            level: 'standard',
+            definition: 'Kind and wanting to help others.',
+            translation: 'Benévolo',
+            usage: 'The benevolent teacher always helped students who were struggling.'
           }
         ],
         examples: [
           {
-            id: "3",
-            wordId: "word3",
-            level: "academic" as const,
-            sentence: "The ephemeral nature of internet trends makes long-term prediction difficult.",
-            context: "Academic writing",
+            id: 'benevolent-ex',
+            wordId: '',
+            level: 'professional',
+            sentence: 'The company supported a benevolent program for local schools.',
+            context: 'Workplace',
+            difficulty: 4
+          }
+        ],
+        semanticMetadata: {
+          synonyms: ['kind', 'generous', 'charitable'],
+          antonyms: ['cruel', 'selfish', 'malevolent'],
+          confusableWords: ['beneficial'],
+          rootWords: ['bene- (good)'],
+          usageNotes: ['Often used to describe people or organizations'],
+          commonMistakes: ['Confusing with "beneficial" (helpful)']
+        }
+      },
+      {
+        word: 'meticulous',
+        phonetics: '/məˈtɪkjʊləs/',
+        partOfSpeech: 'adjective',
+        difficultyLevel: 'B2',
+        frequencyScore: 65,
+        ageSuitability: ['teen', 'adult', 'senior'],
+        meanings: [
+          {
+            id: 'meticulous-standard',
+            wordId: '',
+            level: 'standard',
+            definition: 'Very careful and precise.',
+            translation: 'Meticuloso',
+            usage: 'He kept meticulous notes during the meeting.'
+          }
+        ],
+        examples: [
+          {
+            id: 'meticulous-ex',
+            wordId: '',
+            level: 'professional',
+            sentence: 'Her meticulous attention to detail improved the final report.',
+            context: 'Workplace',
+            difficulty: 4
+          }
+        ],
+        semanticMetadata: {
+          synonyms: ['thorough', 'careful'],
+          antonyms: ['careless'],
+          confusableWords: ['methodical'],
+          rootWords: [],
+          usageNotes: [],
+          commonMistakes: []
+        }
+      },
+      {
+        word: 'eloquent',
+        phonetics: '/ˈeləkwənt/',
+        partOfSpeech: 'adjective',
+        difficultyLevel: 'B2',
+        frequencyScore: 70,
+        ageSuitability: ['teen', 'adult', 'senior'],
+        meanings: [
+          {
+            id: 'eloquent-standard',
+            wordId: '',
+            level: 'standard',
+            definition: 'Fluent and persuasive in speaking or writing.',
+            translation: 'Elocuente',
+            usage: 'The eloquent speaker captivated the audience.'
+          }
+        ],
+        examples: [
+          {
+            id: 'eloquent-ex',
+            wordId: '',
+            level: 'academic',
+            sentence: 'The essay was praised for its eloquent expression of complex ideas.',
+            context: 'School',
+            difficulty: 4
+          }
+        ],
+        semanticMetadata: {
+          synonyms: ['articulate', 'fluent'],
+          antonyms: ['inarticulate'],
+          confusableWords: ['elaborate'],
+          rootWords: [],
+          usageNotes: [],
+          commonMistakes: []
+        }
+      },
+      {
+        word: 'ephemeral',
+        phonetics: '/ɪˈfemərəl/',
+        partOfSpeech: 'adjective',
+        difficultyLevel: 'C1',
+        frequencyScore: 40,
+        ageSuitability: ['adult', 'senior'],
+        meanings: [
+          {
+            id: 'ephemeral-advanced',
+            wordId: '',
+            level: 'advanced',
+            definition: 'Lasting for a very short time.',
+            translation: 'Efímero',
+            usage: 'Fame can be ephemeral.'
+          }
+        ],
+        examples: [
+          {
+            id: 'ephemeral-ex',
+            wordId: '',
+            level: 'academic',
+            sentence: 'The ephemeral nature of online trends makes long-term prediction difficult.',
+            context: 'Academic writing',
             difficulty: 5
           }
         ],
         semanticMetadata: {
-          synonyms: ["transient", "temporary", "fleeting"],
-          antonyms: ["permanent", "everlasting", "enduring"],
-          confusableWords: ["ephemeral", "epidemic"],
-          rootWords: ["ephemera (things that last a short time)"],
-          usageNotes: ["More common in literary and academic contexts"],
-          commonMistakes: ["Confusing with 'epidemic' (disease outbreak)"]
+          synonyms: ['transient', 'fleeting'],
+          antonyms: ['permanent', 'enduring'],
+          confusableWords: ['epidemic'],
+          rootWords: [],
+          usageNotes: [],
+          commonMistakes: []
         }
       },
       {
-        word: "meticulous",
-        phonetics: "/mɪˈtɪkjʊləs/",
-        partOfSpeech: "adjective" as const,
-        difficultyLevel: "B2" as const,
-        frequencyScore: 65,
-        ageSuitability: ["teen", "adult"] as const,
+        word: 'scrutinize',
+        phonetics: '/ˈskruːtənaɪz/',
+        partOfSpeech: 'verb',
+        difficultyLevel: 'C1',
+        frequencyScore: 35,
+        ageSuitability: ['adult', 'senior'],
         meanings: [
           {
-            id: "4",
-            wordId: "word4",
-            level: "standard" as const,
-            definition: "Very careful and precise",
-            translation: "Meticuloso",
-            usage: "She was meticulous in her research methodology."
+            id: 'scrutinize-advanced',
+            wordId: '',
+            level: 'advanced',
+            definition: 'To examine something very carefully and critically.',
+            translation: 'Examinar minuciosamente',
+            usage: 'Auditors scrutinize financial statements.'
           }
         ],
         examples: [
           {
-            id: "4",
-            wordId: "word4",
-            level: "conversational" as const,
-            sentence: "His meticulous attention to detail made him an excellent editor.",
-            context: "Professional context",
-            difficulty: 3
+            id: 'scrutinize-ex',
+            wordId: '',
+            level: 'professional',
+            sentence: 'The contract was scrutinized by the legal team.',
+            context: 'Workplace',
+            difficulty: 5
           }
         ],
         semanticMetadata: {
-          synonyms: ["precise", "careful", "thorough"],
-          antonyms: ["careless", "sloppy", "hasty"],
-          confusableWords: ["meticulous", "methodical"],
-          rootWords: ["meticula (small mark)"],
-          usageNotes: ["Often used with 'attention to detail'"],
-          commonMistakes: ["Using in place of 'methodical' - meticulous means careful, not necessarily organized"]
+          synonyms: ['inspect', 'examine'],
+          antonyms: ['overlook'],
+          confusableWords: [],
+          rootWords: [],
+          usageNotes: [],
+          commonMistakes: []
         }
       },
       {
-        word: "eloquent",
-        phonetics: "/ˈɛləkwənt/",
-        partOfSpeech: "adjective" as const,
-        difficultyLevel: "B2" as const,
-        frequencyScore: 70,
-        ageSuitability: ["teen", "adult"] as const,
+        word: 'obfuscate',
+        phonetics: '/ˈɒbfʌskeɪt/',
+        partOfSpeech: 'verb',
+        difficultyLevel: 'C2',
+        frequencyScore: 15,
+        ageSuitability: ['adult', 'senior'],
         meanings: [
           {
-            id: "5",
-            wordId: "word5",
-            level: "standard" as const,
-            definition: "Fluent and persuasive in speaking or writing",
-            translation: "Elocuente",
-            usage: "The eloquent speaker captivated the audience."
+            id: 'obfuscate-advanced',
+            wordId: '',
+            level: 'advanced',
+            definition: 'To make something unclear or harder to understand.',
+            translation: 'Ofuscar',
+            usage: 'Jargon can obfuscate the main point.'
           }
         ],
         examples: [
           {
-            id: "5",
-            wordId: "word5",
-            level: "academic" as const,
-            sentence: "The essay was praised for its eloquent expression of complex ideas.",
-            context: "Academic praise",
-            difficulty: 3
+            id: 'obfuscate-ex',
+            wordId: '',
+            level: 'academic',
+            sentence: 'The author did not intend to obfuscate the argument with unnecessary complexity.',
+            context: 'Academic writing',
+            difficulty: 5
           }
         ],
         semanticMetadata: {
-          synonyms: ["articulate", "fluent", "persuasive"],
-          antonyms: ["inarticulate", "mumbling", "halting"],
-          confusableWords: ["eloquent", "elaborate"],
-          rootWords: ["e- (out) + loqui (to speak)"],
-          usageNotes: ["Can describe speakers, writers, or speeches"],
-          commonMistakes: ["Confusing with 'elaborate' (detailed, complex)"]
+          synonyms: ['confuse', 'obscure'],
+          antonyms: ['clarify'],
+          confusableWords: ['obfuscation'],
+          rootWords: [],
+          usageNotes: [],
+          commonMistakes: []
         }
       }
     ];
 
     for (const wordData of sampleWords) {
       await this.createWord(wordData);
-    }
-
-    // Create some sample users for testing
-    const sampleUsers = [
-      {
-        primaryLanguage: "English",
-        educationLevel: "college",
-        purpose: "career" as const,
-        readingHabit: "frequent" as const,
-        preferredContentType: "examples" as const,
-        vocabularyLevelScore: 0,
-        weakAreas: [],
-        confidenceScore: 0,
-        retentionRiskIndex: 0
-      }
-    ];
-
-    for (const userData of sampleUsers) {
-      await this.createUser(userData);
     }
   }
 }
